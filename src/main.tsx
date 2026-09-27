@@ -1,6 +1,4 @@
 import { render } from 'preact'
+import { Diagnostic } from './ui/Diagnostic'
 
-render(
-  <main style={{ fontFamily: '-apple-system, sans-serif', padding: '24px' }}>Vocab Review — en construction</main>,
-  document.getElementById('app')!,
-)
+render(<Diagnostic />, document.getElementById('app')!)
