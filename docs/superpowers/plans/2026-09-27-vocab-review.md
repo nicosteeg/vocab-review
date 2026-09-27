@@ -65,7 +65,7 @@
 
 ---
 
-### Tâche 1 : Squelette du projet
+### Task 1 : Squelette du projet
 
 **Files:**
 - Create: `package.json`, `tsconfig.json`, `tsconfig.app.json`, `tsconfig.node.json`, `vite.config.ts`, `index.html`, `public/logo.svg`, `src/vite-env.d.ts`, `src/main.tsx`, `.gitignore`
@@ -331,7 +331,7 @@ git commit -m "Squelette Vite + Preact + PWA" -m "Co-Authored-By: Claude Opus 5.
 
 ---
 
-### Tâche 2 : Déploiement GitHub Pages et projet Google Cloud
+### Task 2 : Déploiement GitHub Pages et projet Google Cloud
 
 **Files:**
 - Create: `.github/workflows/deploy.yml`, `docs/google-cloud-setup.md`, `.env`
@@ -462,7 +462,7 @@ Si le push demande une authentification, c'est à l'utilisateur de la faire.
 
 ---
 
-### Tâche 3 : Connexion Google (flux par redirection)
+### Task 3 : Connexion Google (flux par redirection)
 
 **Files:**
 - Create: `src/test/memoryStorage.ts`, `src/google/auth.ts`
@@ -648,7 +648,7 @@ git commit -m "Connexion Google par redirection OAuth" -m "Co-Authored-By: Claud
 
 ---
 
-### Tâche 4 : Client Drive et test de connexion sur iPhone
+### Task 4 : Client Drive et test de connexion sur iPhone
 
 C'est le point de risque n°1 de la spec : on vérifie sur le vrai iPhone, avant de construire le reste, que la connexion Google revient bien dans l'app installée. On en profite pour relever le nom exact du fichier d'export et quelques lignes du CSV.
 
@@ -913,7 +913,7 @@ Résultats possibles :
 
 ---
 
-### Tâche 5 : Types du domaine et lecture de l'export CSV
+### Task 5 : Types du domaine et lecture de l'export CSV
 
 **Files:**
 - Create: `src/domain/types.ts`, `src/domain/keys.ts`, `src/domain/csv.ts`
@@ -1137,7 +1137,7 @@ git commit -m "Types du domaine et lecture de l'export CSV" -m "Co-Authored-By: 
 
 ---
 
-### Tâche 6 : Planification FSRS et jour d'étude
+### Task 6 : Planification FSRS et jour d'étude
 
 **Files:**
 - Create: `src/domain/scheduler.ts`, `src/domain/studyDay.ts`
@@ -1285,7 +1285,7 @@ git commit -m "Planification FSRS et jour d'étude" -m "Co-Authored-By: Claude O
 
 ---
 
-### Tâche 7 : Fusion d'un export
+### Task 7 : Fusion d'un export
 
 **Files:**
 - Create: `src/test/builders.ts`, `src/domain/merge.ts`
@@ -1493,7 +1493,7 @@ git commit -m "Fusion d'un export Google Translate" -m "Co-Authored-By: Claude O
 
 ---
 
-### Tâche 8 : File de la prochaine session
+### Task 8 : File de la prochaine session
 
 **Files:**
 - Create: `src/domain/queue.ts`
@@ -1681,7 +1681,7 @@ git commit -m "File de révision" -m "Co-Authored-By: Claude Opus 5.5 <noreply@a
 
 ---
 
-### Tâche 9 : Déroulement d'une session
+### Task 9 : Déroulement d'une session
 
 **Files:**
 - Create: `src/domain/session.ts`
@@ -1879,7 +1879,7 @@ git commit -m "Déroulement d'une session de révision" -m "Co-Authored-By: Clau
 
 ---
 
-### Tâche 10 : Stockage IndexedDB
+### Task 10 : Stockage IndexedDB
 
 **Files:**
 - Create: `src/storage/db.ts`
@@ -2084,7 +2084,7 @@ git commit -m "Stockage IndexedDB transactionnel" -m "Co-Authored-By: Claude Opu
 
 ---
 
-### Tâche 11 : Sauvegarde et restauration
+### Task 11 : Sauvegarde et restauration
 
 **Files:**
 - Create: `src/storage/backup.ts`
@@ -2250,7 +2250,7 @@ git commit -m "Sauvegarde et restauration JSON" -m "Co-Authored-By: Claude Opus 
 
 ---
 
-### Tâche 12 : Synchro de bout en bout et messages
+### Task 12 : Synchro de bout en bout et messages
 
 **Files:**
 - Create: `src/sync.ts`, `src/ui/messages.ts`
@@ -2530,7 +2530,7 @@ git commit -m "Synchro de bout en bout et messages" -m "Co-Authored-By: Claude O
 
 ---
 
-### Tâche 13 : Interface
+### Task 13 : Interface
 
 **Files:**
 - Create: `src/ui/App.tsx`, `src/ui/Home.tsx`, `src/ui/Review.tsx`, `src/ui/Settings.tsx`, `src/ui/share.ts`, `src/styles.css`
@@ -3292,7 +3292,7 @@ git commit -m "Interface : accueil, révision, réglages" -m "Co-Authored-By: Cl
 
 ---
 
-### Tâche 14 : Recette sur iPhone et mise en ligne
+### Task 14 : Recette sur iPhone et mise en ligne
 
 **Files:** aucun, sauf correctifs éventuels.
 
