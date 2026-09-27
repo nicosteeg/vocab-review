@@ -1,6 +1,6 @@
 # Vocab Review — spec de conception
 
-Date : 2026-09-27 · Statut : validée en discussion, en relecture
+Date : 2026-09-27 · Statut : validée (précisée pendant l'écriture du plan, voir §11)
 
 ## 1. Objectif
 
@@ -59,17 +59,19 @@ Chaque module a un seul rôle. Toute la logique métier (`domain/`) est faite de
 
 | Module | Rôle | Dépend de |
 |---|---|---|
+| `src/domain/keys.ts` | `normalizeText(text)` et `cardId(wordKey, direction)`. | — |
 | `src/domain/csv.ts` | `parseExport(csvText)` → `{ pairs: {en, fr}[], skipped }`. Reconnaît les langues et remet les paires dans le sens EN/FR. | papaparse |
-| `src/domain/merge.ts` | `mergeImport(words, cards, pairs, now)` → nouvel état + stats (`added`, `removed`, `restored`, `updated`). | — |
+| `src/domain/merge.ts` | `mergeImport(words, pairs, now)` → tous les mots à jour, les cartes à créer et les stats (`added`, `removed`, `restored`). | scheduler, keys |
 | `src/domain/scheduler.ts` | Enveloppe `ts-fsrs` : `newCard(now)`, `rate(card, 'su' \| 'pas-su', now)`. | ts-fsrs |
 | `src/domain/studyDay.ts` | Donne le « jour d'étude » d'une date : un jour change à 4 h du matin, heure locale. | — |
-| `src/domain/session.ts` | `buildQueue(...)`, puis `answer(state, rating, now)` et `undo(state)`. Machine à états d'une session. | scheduler, studyDay |
+| `src/domain/queue.ts` | `buildQueue({ words, cards, settings, now })` : cartes de la prochaine session. | scheduler, studyDay |
+| `src/domain/session.ts` | `startSession(queue)`, `answer(state, grade, now)`, `undo(state)`, `summary(state)`. Machine à états d'une session. | scheduler |
 | `src/storage/db.ts` | Lecture et écriture IndexedDB : mots, cartes, réglages, infos de synchro. Écritures groupées en une seule transaction. | idb |
 | `src/storage/backup.ts` | `exportBackup()` → JSON ; `validateBackup(json)` ; `restoreBackup(json)`, qui remplace toutes les données. | db |
 | `src/google/auth.ts` | Connexion OAuth par redirection : `startAuth()`, `consumeRedirect()`, `getToken()`. | — |
 | `src/google/drive.ts` | `findLatestExport(token)` et `exportCsv(token, fileId)`, via `fetch`. | — |
 | `src/sync.ts` | Enchaîne les étapes : auth → drive → csv → merge → db. Renvoie un résultat typé (succès + stats, ou erreur connue). | tous |
-| `src/ui/*` | `App` (navigation par simple état, sans routeur), `Home`, `Review`, `Settings`. | sync, session, db, backup |
+| `src/ui/*` | `App` (navigation par simple état, sans routeur), `Home`, `Review`, `Settings`, `messages` (textes), `share` (partage de fichier). `Diagnostic` est un écran provisoire de test de connexion, supprimé à la fin. | sync, queue, session, db, backup |
 | `src/config.ts` | Identifiant client OAuth (non secret) et constantes. | — |
 
 ## 3. Données
@@ -109,7 +111,7 @@ Deux paires qui ont la même clé anglaise donnent **un seul mot**, qui porte pl
 L'app utilise le flux OAuth 2.0 « client-side web app » (`response_type=token`), en **redirection pleine page**. Un popup ne marche pas de façon fiable dans une PWA iOS en mode standalone.
 
 1. `startAuth()` :
-   - tire un `state` au hasard et le met dans `sessionStorage` avec un indicateur « synchro en attente » ;
+   - tire un `state` au hasard et le met dans `localStorage` avec un indicateur « synchro en attente » ;
    - redirige vers `https://accounts.google.com/o/oauth2/v2/auth` avec `client_id`, `redirect_uri` = `location.origin + BASE_URL`, `response_type=token`, `scope=https://www.googleapis.com/auth/drive.readonly`, `include_granted_scopes=true` et `state`.
 2. Au chargement, `consumeRedirect()` :
    - lit le fragment d'URL et vérifie le `state` ;
@@ -132,7 +134,7 @@ L'app utilise le flux OAuth 2.0 « client-side web app » (`response_type=token`
 - EN : `english`, `anglais`, `en`.
 - FR : `french`, `francais`, `fr`.
 
-Une ligne FR→EN est remise dans le sens `{ en: cible, fr: source }`. Les lignes d'autres langues et les lignes vides comptent dans `skipped`.
+Une ligne FR→EN est remise dans le sens `{ en: cible, fr: source }`. Les lignes non vides d'autres langues, ou sans texte, comptent dans `skipped`. Les lignes vides sont ignorées sans être comptées.
 
 ### 4.3 Règles de fusion (`mergeImport`)
 
@@ -155,15 +157,16 @@ Toutes les écritures d'une synchro (mots, cartes, `SyncMeta`) se font dans **un
 
 ### 5.1 Algorithme
 
-- `ts-fsrs` avec les paramètres par défaut.
+- `ts-fsrs` avec les paramètres par défaut, sauf `enable_short_term: false` : pas d'étapes d'apprentissage en minutes, les intervalles se comptent en jours. Mesuré : « Pas su » sur un mot nouveau → revient le lendemain ; « Su » → dans 3 jours.
 - Deux notes seulement : « Pas su » → `Rating.Again`, « Su » → `Rating.Good`.
+- La répétition immédiate d'une carte ratée est gérée par la session (§5.3), pas par l'algorithme.
 
 ### 5.2 Constitution de la file (`buildQueue`)
 
 Seuls les mots `actif` comptent. Le jour d'étude change à 4 h du matin, heure locale.
 
-1. **Cartes dues** : `fsrs.due <= now`, de la plus en retard à la moins en retard.
-2. **Nouvelles cartes**, dans la limite de `newPerDay` moins le nombre de cartes déjà introduites ce jour d'étude (d'après `introducedAt`). Ordre : par `order` croissant, `en-fr` d'abord.
+1. **Cartes dues** : cartes déjà révisées dont la date due tombe au plus tard aujourd'hui (en jour d'étude, pour que toutes les cartes du jour soient disponibles dès le matin), de la plus en retard à la moins en retard.
+2. **Nouvelles cartes**, dans la limite de `newPerDay` moins le nombre de cartes déjà introduites ce jour d'étude (d'après `introducedAt`). Ordre : par `order` croissant du mot, une carte par mot, `en-fr` avant `fr-en`.
    - Une carte `fr-en` neuve n'est proposée que si la carte `en-fr` du même mot a déjà été révisée au moins une fois.
 3. **Un sens par mot et par jour** : une carte est exclue si l'autre carte du même mot a été révisée ce jour d'étude, ou si elle est déjà dans la file.
 
@@ -171,9 +174,11 @@ Seuls les mots `actif` comptent. Le jour d'étude change à 4 h du matin, heure 
 
 - On montre le recto (mot anglais, ou traductions françaises pour `fr-en`). Toucher n'importe où retourne la carte.
 - Le verso montre la réponse. Pour `en-fr`, toutes les traductions sont séparées par « ; ».
-- **« Su »** : `rate(card, 'su')`, la carte est enregistrée et quitte la file.
-- **« Pas su »** : `rate(card, 'pas-su')`, la carte est enregistrée et **remise en fin de file**. La session continue jusqu'à ce que la file soit vide.
-- **« Annuler »** (un seul niveau) : restaure l'état de la carte d'avant la dernière réponse (en base aussi) et remet la carte en tête de file.
+- **Première réponse à une carte dans la session** : elle seule la replanifie (`rate`) et l'enregistre. `introducedAt` est rempli à la première révision de la carte.
+- **« Su »** : la carte quitte la file.
+- **« Pas su »** : la carte est **remise en fin de file**. Les réponses suivantes à cette carte, dans la même session, servent seulement à l'entraînement : elles ne la replanifient pas. La session continue jusqu'à ce que la file soit vide.
+- **« Annuler »** (un seul niveau) : restaure l'état de la carte d'avant la dernière réponse (en base aussi) et remet la carte en tête de file. Aussi proposé sur l'écran de fin, pour rattraper un mauvais tap sur la dernière carte.
+- **Textes longs** (phrases enregistrées) : police réduite au-delà de 40 caractères, et la carte défile si besoin ; les boutons restent visibles.
 - **Fin de session** : « X cartes · Y % sues ». Le pourcentage se calcule sur la première réponse à chaque carte.
 - Chaque réponse est écrite en base tout de suite : quitter l'app en cours de session ne perd rien.
 
@@ -250,3 +255,14 @@ Au démarrage, si `navigator.storage.persist()` est refusé, les réglages le si
    - Solution de repli si ça ne marche pas : l'import CSV manuel, actuellement hors périmètre.
 2. **Format réel de l'export** (nom du fichier, colonnes, ligne d'en-tête, noms de langue). Il faut quelques lignes d'un vrai export avant de coder `csv.ts`.
 3. **Flux OAuth « token » (implicite).** Google le supporte encore pour les apps web côté client. Le flux par code + PKCE demanderait un secret client pour le type « Application Web », donc un serveur, ce qui sort de ce projet.
+
+## 11. Précisions apportées pendant l'écriture du plan
+
+Le code du plan a été écrit et testé dans un projet jetable avant d'être inscrit dans le plan. Ce que ça a changé par rapport à la première version de cette spec :
+
+- `enable_short_term: false` dans `ts-fsrs`, et seule la première réponse d'une carte dans une session la replanifie (§5.1, §5.3). Sans ça, « Pas su » puis « Su » dans la même session donnait le même intervalle qu'un « Su » direct.
+- Une carte est due selon le jour d'étude, pas à la minute près (§5.2).
+- Les nouvelles cartes avancent mot par mot (§5.2), pour que les cartes `fr-en` n'attendent pas que toutes les `en-fr` aient été vues.
+- `state` OAuth dans `localStorage` plutôt que `sessionStorage` (§4.1) : plus de chances de survivre à l'aller-retour vers Google dans une PWA iOS.
+- Découpage : `keys.ts` et `queue.ts` séparés, `mergeImport` sans les cartes en entrée, stat `updated` retirée (§2).
+- « Annuler » aussi sur l'écran de fin, et affichage adapté aux textes longs (§5.3).
