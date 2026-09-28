@@ -153,6 +153,11 @@ button:disabled {
   margin-top: auto;
 }
 
+/* Hauteur fixe : c'est la carte qui défile, les boutons restent à l'écran */
+.screen.review {
+  height: 100dvh;
+}
+
 .review .progress {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -166,6 +171,8 @@ button:disabled {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* Texte trop long : le haut reste accessible au défilement au lieu d'être coupé */
+  justify-content: safe center;
   gap: 18px;
   padding: 24px;
   background: var(--surface);
