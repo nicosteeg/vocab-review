@@ -30,6 +30,17 @@ describe('openStore', () => {
     expect(await store.load()).toEqual({ words: [], cards: [], settings: DEFAULT_SETTINGS, syncMeta: null })
   })
 
+  it('ne remplace pas une carte déjà en base par une carte neuve de la synchro', async () => {
+    // Restauration faite pendant qu'une synchro calculée sur une base vide était en cours
+    const store = await freshStore()
+    const reviewed = card('reach', 'en-fr', { lastReview: '2026-09-20T10:00:00.000Z', due: '2026-09-30T10:00:00.000Z' })
+    await store.replaceAll({ words: [word('reach')], cards: [reviewed], settings: DEFAULT_SETTINGS, syncMeta: null })
+    await store.applySync([word('reach')], [card('reach', 'en-fr'), card('reach', 'fr-en')], meta)
+    const cards = (await store.load()).cards
+    expect(cards.find((c) => c.id === 'reach:en-fr')).toEqual(reviewed)
+    expect(cards.map((c) => c.id).sort()).toEqual(['reach:en-fr', 'reach:fr-en'])
+  })
+
   it('met à jour une carte et les réglages', async () => {
     const store = await freshStore()
     await store.applySync([word('a')], [card('a', 'en-fr')], meta)

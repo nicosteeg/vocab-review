@@ -30,17 +30,23 @@ export async function openStore(name = 'vocab-review'): Promise<Store> {
     },
   })
 
+  /** Transaction d'écriture sur tous les magasins ; son échec est remonté par `commit`. */
+  function writeTx(): WriteTx {
+    const tx = db.transaction(['words', 'cards', 'kv'], 'readwrite')
+    tx.done.catch(() => {})
+    return tx
+  }
+
   /**
-   * Exécute les écritures produites par `requests` dans une seule transaction.
+   * Exécute les écritures produites par `requests` dans la transaction `tx`.
    * Au premier échec, IndexedDB annule tout ; chaque requête est suivie dès sa création
    * pour qu'aucun rejet ne reste non géré.
    */
-  async function write(requests: (tx: WriteTx) => Iterable<Promise<unknown>>): Promise<void> {
-    const tx = db.transaction(['words', 'cards', 'kv'], 'readwrite')
+  async function commit(tx: WriteTx, requests: Iterable<Promise<unknown>>): Promise<void> {
     const pending: Promise<unknown>[] = []
     let failure: unknown
     try {
-      for (const request of requests(tx)) pending.push(request)
+      for (const request of requests) pending.push(request)
     } catch (error) {
       failure = error
       tx.abort()
@@ -73,15 +79,20 @@ export async function openStore(name = 'vocab-review'): Promise<Store> {
     async saveSettings(settings) {
       await db.put('kv', settings, 'settings')
     },
-    applySync(words, newCards, meta) {
-      return write(function* (tx) {
+    async applySync(words, newCards, meta) {
+      const tx = writeTx()
+      // Lu dans la même transaction : une carte déjà en base (par exemple restaurée pendant
+      // la synchro) n'est jamais remplacée par une carte neuve.
+      const existing = new Set(await tx.objectStore('cards').getAllKeys())
+      return commit(tx, (function* () {
         for (const w of words) yield tx.objectStore('words').put(w)
-        for (const c of newCards) yield tx.objectStore('cards').put(c)
+        for (const c of newCards) if (!existing.has(c.id)) yield tx.objectStore('cards').put(c)
         yield tx.objectStore('kv').put(meta, 'syncMeta')
-      })
+      })())
     },
     replaceAll(snapshot) {
-      return write(function* (tx) {
+      const tx = writeTx()
+      return commit(tx, (function* () {
         yield tx.objectStore('words').clear()
         yield tx.objectStore('cards').clear()
         yield tx.objectStore('kv').clear()
@@ -89,7 +100,7 @@ export async function openStore(name = 'vocab-review'): Promise<Store> {
         for (const c of snapshot.cards) yield tx.objectStore('cards').put(c)
         yield tx.objectStore('kv').put(snapshot.settings, 'settings')
         if (snapshot.syncMeta) yield tx.objectStore('kv').put(snapshot.syncMeta, 'syncMeta')
-      })
+      })())
     },
   }
 }
