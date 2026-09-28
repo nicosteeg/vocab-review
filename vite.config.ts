@@ -8,8 +8,6 @@ export default defineConfig({
     preact(),
     VitePWA({
       registerType: 'autoUpdate',
-      // SPIKE JETABLE : la page de test du sélecteur ne doit pas être remplacée par l'app
-      workbox: { navigateFallbackDenylist: [/picker-test/] },
       pwaAssets: {
         image: 'public/logo.svg',
         preset: 'minimal-2023',
