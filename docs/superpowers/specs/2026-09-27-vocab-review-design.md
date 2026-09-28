@@ -96,7 +96,7 @@ type StoredCard = {
   introducedAt?: string;  // ISO, date de la 1re révision (absent tant que la carte est nouvelle)
 };
 
-type Settings = { newPerDay: number };                       // défaut : 10
+type Settings = { newPerDay: number; directions: 'both' | 'en-fr' | 'fr-en' }; // défaut : 10, 'both'
 type SyncMeta = { fileId: string; modifiedTime: string; syncedAt: string };
 ```
 
@@ -166,12 +166,20 @@ Toutes les écritures d'une synchro (mots, cartes, `SyncMeta`) se font dans **un
 
 ### 5.2 Constitution de la file (`buildQueue`)
 
-Seuls les mots `actif` comptent. Le jour d'étude change à 4 h du matin, heure locale.
+Seuls les mots `actif` comptent, et seules les cartes du **sens choisi** dans les réglages (`directions`). Le jour d'étude change à 4 h du matin, heure locale. Le hasard (`random`, Math.random dans l'app) est passé en paramètre.
 
-1. **Cartes dues** : cartes déjà révisées dont la date due tombe au plus tard aujourd'hui (en jour d'étude, pour que toutes les cartes du jour soient disponibles dès le matin), de la plus en retard à la moins en retard.
-2. **Nouvelles cartes**, dans la limite de `newPerDay` moins le nombre de cartes déjà introduites ce jour d'étude (d'après `introducedAt`). Ordre : par `order` croissant du mot, une carte par mot, `en-fr` avant `fr-en`.
-   - Une carte `fr-en` neuve n'est proposée que si la carte `en-fr` du même mot a déjà été révisée au moins une fois.
+1. **Cartes dues** : cartes déjà révisées dont la date due tombe au plus tard aujourd'hui (en jour d'étude, pour que toutes les cartes du jour soient disponibles dès le matin). Si les deux sens d'un mot sont dus, on garde le plus en retard.
+2. **Nouvelles cartes**, dans la limite de `newPerDay` moins le nombre de cartes déjà introduites ce jour d'étude (d'après `introducedAt`), **tirées au hasard**, une carte par mot.
+   - En mode « les deux sens » : une carte `fr-en` neuve n'est proposée que si la carte `en-fr` du même mot a déjà été révisée ; ces cartes `fr-en` passent avant les mots jamais vus (sinon, avec un gros stock de mots, elles ne sortiraient presque jamais).
+   - En mode un seul sens : un mot jamais vu arrive directement dans ce sens.
 3. **Un sens par mot et par jour** : une carte est exclue si l'autre carte du même mot a été révisée ce jour d'étude, ou si elle est déjà dans la file.
+4. **Ordre de la session mélangé** (cartes dues et nouvelles ensemble).
+
+Les cartes d'un sens désactivé gardent leur état ; si le sens est réactivé, elles reviennent comme les autres (les plus en retard sont dues tout de suite).
+
+**Sessions supplémentaires** (proposées quand la session du jour est vide) :
+- `buildExtraNewQueue` : un lot de `newPerDay` nouvelles cartes au-delà de la limite du jour, avec les mêmes règles de choix ; elles entrent ensuite dans la répétition espacée normalement.
+- `buildFreeReviewQueue` : **révision libre**, 20 cartes déjà apprises au plus (dues ou non), au hasard, une par mot, dans le sens choisi.
 
 ### 5.3 Déroulement d'une session (`session.ts`)
 
@@ -184,17 +192,20 @@ Seuls les mots `actif` comptent. Le jour d'étude change à 4 h du matin, heure 
 - **Textes longs** (phrases enregistrées) : police réduite au-delà de 40 caractères, et la carte défile si besoin ; les boutons restent visibles.
 - **Fin de session** : « X cartes · Y % sues ». Le pourcentage se calcule sur la première réponse à chaque carte.
 - Chaque réponse est écrite en base tout de suite : quitter l'app en cours de session ne perd rien.
+- **Révision libre** (`startSession(queue, { practice: true })`) : entraînement pur. Les réponses ne replanifient ni n'enregistrent rien, « Annuler » ne réécrit rien en base ; « Pas su », l'écran de fin et le pourcentage fonctionnent comme d'habitude. L'écran affiche « Révision libre ».
 
 ### 5.4 Écrans
 
 - **Accueil** :
   - « À revoir : N », « Nouvelles : M » ;
-  - gros bouton « Réviser », désactivé s'il n'y a aucune carte ;
+  - gros bouton « Réviser » s'il y a des cartes ; « Rien à réviser » (désactivé) s'il n'y a encore aucun mot ;
+  - quand la session du jour est terminée : « Session du jour terminée ✓ », puis « Encore N nouvelles cartes » (masqué si `newPerDay` vaut 0, grisé s'il n'en reste plus) et « Révision libre » (grisé sans mot appris) ;
   - bouton « Synchroniser », avec la date de la dernière synchro ;
   - accès aux réglages.
 - **Révision** : la carte occupe l'écran, et les deux boutons sont en bas, à portée de pouce (au moins 56 px de haut, en respectant `safe-area-inset-bottom`). Le bouton « Annuler » et la progression (« 12 / 30 ») sont en haut.
 - **Réglages** :
   - nouvelles cartes par jour ;
+  - sens de révision : les deux sens, anglais → français, ou français → anglais ;
   - « Exporter une sauvegarde » et « Restaurer une sauvegarde » ;
   - lien d'aide « Comment exporter depuis Google Translate ».
 
@@ -277,3 +288,10 @@ Le code du plan a été écrit et testé dans un projet jetable avant d'être in
 - `drive.readonly` est remplacé par `drive.file`, avec le sélecteur hébergé par Google (`trigger_onepick`), testé sur iPhone avec une page jetable depuis supprimée : le fichier choisi est lisible et c'est le seul visible ;
 - la recherche automatique du dernier export disparaît : l'utilisateur choisit la feuille à chaque synchro, ce qui ajoute l'écran d'accord et le sélecteur de Google ;
 - le sélecteur intégré en JavaScript (clé d'API, script `apis.google.com`) a été écarté au profit du sélecteur hébergé, plus simple et fait pour le mobile.
+
+## 13. Hasard, sessions supplémentaires et choix du sens (retours d'usage)
+
+Après quelques jours d'usage, l'utilisateur a demandé :
+- **du hasard** : les nouveaux mots arrivaient dans l'ordre de l'export (du plus récent au plus ancien). Ils sont désormais tirés au hasard, et l'ordre de chaque session est mélangé (§5.2) ;
+- **plusieurs sessions par jour** : une fois la session du jour terminée, « Encore N nouvelles cartes » et « Révision libre » (sans effet sur la planification) sont proposés (§5.2 à §5.4) ;
+- **le choix du sens** dans les réglages (§3, §5.2, §5.4). Les réglages enregistrés et les sauvegardes d'avant ce champ sont lus comme « les deux sens » ; une valeur inconnue dans une sauvegarde la rend invalide.
