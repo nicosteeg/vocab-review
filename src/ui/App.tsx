@@ -11,6 +11,7 @@ import { Home } from './Home'
 import { errorMessage, syncMessage } from './messages'
 import { Review } from './Review'
 import { Settings } from './Settings'
+import { onBecomeVisible } from './visibility'
 
 type Screen = { name: 'home' } | { name: 'review'; queue: StoredCard[] } | { name: 'settings' }
 
@@ -24,9 +25,12 @@ export function App() {
   const [syncing, setSyncing] = useState(false)
   const [persistDenied, setPersistDenied] = useState(false)
   const token = useRef<Token | null>(null)
+  // Force un nouveau rendu (et donc de nouveaux compteurs) au retour de l'arrière-plan.
+  const [, setResumedAt] = useState(0)
 
   useEffect(() => {
     void start()
+    return onBecomeVisible(document, () => setResumedAt(Date.now()))
   }, [])
 
   async function start() {
@@ -132,7 +136,7 @@ export function App() {
       message={message}
       onReview={() => {
         setMessage(null)
-        setScreen({ name: 'review', queue })
+        setScreen({ name: 'review', queue: buildQueue({ ...snapshot, now: new Date() }) })
       }}
       onSync={() => void sync(store, snapshot, false)}
       onSettings={() => setScreen({ name: 'settings' })}
