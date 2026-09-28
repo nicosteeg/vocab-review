@@ -1,4 +1,5 @@
 import { render } from 'preact'
-import { Diagnostic } from './ui/Diagnostic'
+import { App } from './ui/App'
+import './styles.css'
 
-render(<Diagnostic />, document.getElementById('app')!)
+render(<App />, document.getElementById('app')!)
