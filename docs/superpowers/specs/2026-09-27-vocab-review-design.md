@@ -69,7 +69,7 @@ Chaque module a un seul rôle. Toute la logique métier (`domain/`) est faite de
 | `src/storage/db.ts` | Lecture et écriture IndexedDB : mots, cartes, réglages, infos de synchro. Écritures groupées en une seule transaction. | idb |
 | `src/storage/backup.ts` | `exportBackup()` → JSON ; `validateBackup(json)` ; `restoreBackup(json)`, qui remplace toutes les données. | db |
 | `src/google/auth.ts` | Connexion OAuth par redirection : `startAuth()`, `consumeRedirect()`, `getToken()`. | — |
-| `src/google/drive.ts` | `findLatestExport(token)` et `exportCsv(token, fileId)`, via `fetch`. | — |
+| `src/google/drive.ts` | `getFile(token, fileId)` et `exportCsv(token, fileId)`, via `fetch`. | — |
 | `src/sync.ts` | Enchaîne les étapes : auth → drive → csv → merge → db. Renvoie un résultat typé (succès + stats, ou erreur connue). | tous |
 | `src/ui/*` | `App` (navigation par simple état, sans routeur), `Home`, `Review`, `Settings`, `messages` (textes), `share` (partage de fichier). `Diagnostic` est un écran provisoire de test de connexion, supprimé à la fin. | sync, queue, session, db, backup |
 | `src/config.ts` | Identifiant client OAuth (non secret) et constantes. | — |
@@ -110,25 +110,28 @@ Deux paires qui ont la même clé anglaise donnent **un seul mot**, qui porte pl
 
 L'app utilise le flux OAuth 2.0 « client-side web app » (`response_type=token`), en **redirection pleine page**. Un popup ne marche pas de façon fiable dans une PWA iOS en mode standalone.
 
-1. `startAuth()` :
+**Accès limité au fichier choisi.** La permission est `drive.file` : l'app ne voit que les fichiers que l'utilisateur choisit dans le **sélecteur hébergé par Google** (`trigger_onepick=true`), affiché pendant le même passage chez Google que la connexion. Le reste du Drive lui est invisible. Vérifié sur iPhone : seul le fichier choisi est visible.
+
+1. `beginAuth()` (à chaque « Synchroniser ») :
    - tire un `state` au hasard et le met dans `localStorage` avec un indicateur « synchro en attente » ;
-   - redirige vers `https://accounts.google.com/o/oauth2/v2/auth` avec `client_id`, `redirect_uri` = `location.origin + BASE_URL`, `response_type=token`, `scope=https://www.googleapis.com/auth/drive.readonly`, `include_granted_scopes=true` et `state`.
+   - redirige vers `https://accounts.google.com/o/oauth2/v2/auth` avec `client_id`, `redirect_uri` = `location.origin + BASE_URL`, `response_type=token`, `scope=https://www.googleapis.com/auth/drive.file`, `state`, `trigger_onepick=true`, `prompt=consent` (exigé par Google pour afficher le sélecteur) et `mimetypes=application/vnd.google-apps.spreadsheet`.
+   - **Pas d'`include_granted_scopes`** : sinon une permission plus large accordée auparavant se réajouterait au jeton.
 2. Au chargement, `consumeRedirect()` :
-   - lit le fragment d'URL et vérifie le `state` ;
-   - garde `access_token` et son expiration **en mémoire uniquement** ;
+   - lit le fragment d'URL (`access_token`, `picked_file_ids`) et vérifie le `state` ;
+   - garde le jeton **en mémoire uniquement**, le temps de la synchro ;
    - nettoie l'URL avec `history.replaceState` ;
-   - si une synchro était en attente, la relance automatiquement.
+   - si une synchro était en attente, la relance automatiquement avec le premier fichier choisi.
+
+Comme chaque export Google Translate crée un nouveau fichier, chaque synchro repasse par Google (accord + sélecteur) : le jeton n'est pas réutilisé d'une synchro à l'autre.
 3. Le projet Google Cloud reste en mode **Test**, avec l'utilisateur comme seul testeur. Pas de validation Google nécessaire ; l'écran « application non vérifiée » est attendu la première fois.
 
-### 4.2 Trouver et lire l'export
+### 4.2 Lire l'export choisi
 
-1. **Recherche** : `GET https://www.googleapis.com/drive/v3/files`
-   - `q = mimeType='application/vnd.google-apps.spreadsheet' and trashed=false and (name contains 'Saved translations' or name contains '<nom FR à confirmer>')`
-   - `orderBy=modifiedTime desc`, `pageSize=1`, `fields=files(id,name,modifiedTime)`
+1. **Infos du fichier choisi** : `GET https://www.googleapis.com/drive/v3/files/{id}?fields=id,name,modifiedTime`. Aucun fichier choisi → « Aucun fichier choisi » avec l'aide pour exporter.
 2. Si `fileId` et `modifiedTime` sont les mêmes que dans `SyncMeta` → « Déjà à jour », rien d'autre.
 3. **Export** : `GET https://www.googleapis.com/drive/v3/files/{id}/export?mimeType=text/csv`. Ça exporte le premier onglet.
 
-**Format attendu, à confirmer sur un vrai export :** 4 colonnes `langue source, langue cible, texte source, texte traduit`, a priori sans ligne d'en-tête.
+**Format (confirmé sur un vrai export) :** 4 colonnes `langue source, langue cible, texte source, texte traduit`, sans ligne d'en-tête, libellés `English` / `French`.
 
 **Reconnaissance des langues :** on compare en ignorant la casse et les accents.
 - EN : `english`, `anglais`, `en`.
@@ -215,9 +218,9 @@ Seuls les mots `actif` comptent. Le jour d'étude change à 4 h du matin, heure 
 |---|---|
 | `offline` (`navigator.onLine` false, ou échec réseau) | « Pas de connexion. Tu peux quand même réviser. » |
 | `auth-denied` (fragment avec `error=access_denied`) | « Accès Google refusé. » |
-| `auth-expired` (401 de Drive) | Une nouvelle redirection automatique. Au deuxième 401 d'affilée : « Connexion Google impossible. » |
+| `auth-failed` (401 de Drive, ou erreur Google autre qu'un refus) | « Connexion Google impossible. » Le jeton venant toujours d'être obtenu, on ne relance pas de redirection. |
 | `state-mismatch` | Retour ignoré, et « Connexion interrompue, réessaie. » |
-| `no-export` | Explication pas à pas : translate.google.com → Enregistrées → Exporter vers Google Sheets. |
+| `no-file-chosen` (sélecteur fermé sans choix) | « Aucun fichier choisi », puis l'explication : translate.google.com → Enregistrées → Exporter vers Google Sheets, puis choisir la feuille « Saved translations » la plus récente. |
 | `unrecognized-format` (0 paire reconnue) | « Format de l'export non reconnu. » Rien n'est modifié. |
 | `drive-error` (autre code HTTP) | « Erreur Google Drive (code). » |
 
@@ -240,11 +243,11 @@ Au démarrage, si `navigator.storage.persist()` est refusé, les réglages le si
 ## 9. Mise en place Google Cloud (guide fourni dans `docs/google-cloud-setup.md`)
 
 1. Créer un projet Google Cloud et activer **Google Drive API**.
-2. Écran de consentement OAuth : type « Externe », statut **Test**, ajouter son propre compte comme utilisateur test, avec le scope `drive.readonly`.
+2. Écran de consentement OAuth : type « Externe », statut **Test**, ajouter son propre compte comme utilisateur test, avec le seul scope `drive.file`.
 3. Identifiants → ID client OAuth de type **Application Web** :
    - origines JavaScript autorisées : `https://<compte>.github.io` et `http://localhost:5173` ;
    - URI de redirection autorisées : `https://<compte>.github.io/vocab-review/` et `http://localhost:5173/vocab-review/`.
-4. Copier l'ID client dans `src/config.ts`. Il n'est pas secret et peut être commité.
+4. Mettre l'ID client dans le fichier `.env` (`VITE_GOOGLE_CLIENT_ID`), lu par `src/config.ts`. Il n'est pas secret et peut être commité. Aucune clé d'API n'est nécessaire : le sélecteur est hébergé par Google.
 
 ## 10. Risques et points à vérifier tôt
 
@@ -266,3 +269,11 @@ Le code du plan a été écrit et testé dans un projet jetable avant d'être in
 - `state` OAuth dans `localStorage` plutôt que `sessionStorage` (§4.1) : plus de chances de survivre à l'aller-retour vers Google dans une PWA iOS.
 - Découpage : `keys.ts` et `queue.ts` séparés, `mergeImport` sans les cartes en entrée, stat `updated` retirée (§2).
 - « Annuler » aussi sur l'écran de fin, et affichage adapté aux textes longs (§5.3).
+
+## 12. Accès limité au fichier choisi (après la mise en ligne)
+
+À la demande de l'utilisateur, pour que l'app ne puisse jamais lire le reste de son Drive, même si son code était compromis :
+
+- `drive.readonly` est remplacé par `drive.file`, avec le sélecteur hébergé par Google (`trigger_onepick`), testé sur iPhone avec une page jetable depuis supprimée : le fichier choisi est lisible et c'est le seul visible ;
+- la recherche automatique du dernier export disparaît : l'utilisateur choisit la feuille à chaque synchro, ce qui ajoute l'écran d'accord et le sélecteur de Google ;
+- le sélecteur intégré en JavaScript (clé d'API, script `apis.google.com`) a été écarté au profit du sélecteur hébergé, plus simple et fait pour le mobile.
