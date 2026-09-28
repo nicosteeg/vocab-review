@@ -1,8 +1,8 @@
 export type DriveFile = { id: string; name: string; modifiedTime: string }
 
 export type DriveApi = {
-  /** Feuille d'export Google Translate la plus récente, ou null s'il n'y en a pas. */
-  findLatestExport(token: string): Promise<DriveFile | null>
+  /** Nom et date de modification du fichier choisi dans le sélecteur. */
+  getFile(token: string, fileId: string): Promise<DriveFile>
   /** Contenu CSV du premier onglet de la feuille. */
   exportCsv(token: string, fileId: string): Promise<string>
 }
@@ -19,14 +19,8 @@ export class DriveError extends Error {
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>
 
 const API = 'https://www.googleapis.com/drive/v3/files'
-const quote = (text: string) => `'${text.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
 
-export function exportQuery(names: string[]): string {
-  const byName = names.map((n) => `name contains ${quote(n)}`).join(' or ')
-  return `mimeType='application/vnd.google-apps.spreadsheet' and trashed=false and (${byName})`
-}
-
-export function createDriveApi(names: string[], fetchFn: Fetch = (input, init) => fetch(input, init)): DriveApi {
+export function createDriveApi(fetchFn: Fetch = (input, init) => fetch(input, init)): DriveApi {
   async function get(url: string, token: string): Promise<Response> {
     const response = await fetchFn(url, { headers: { Authorization: `Bearer ${token}` } })
     if (!response.ok) throw new DriveError(response.status)
@@ -34,15 +28,9 @@ export function createDriveApi(names: string[], fetchFn: Fetch = (input, init) =
   }
 
   return {
-    async findLatestExport(token) {
-      const params = new URLSearchParams({
-        q: exportQuery(names),
-        orderBy: 'modifiedTime desc',
-        pageSize: '1',
-        fields: 'files(id,name,modifiedTime)',
-      })
-      const body = (await (await get(`${API}?${params}`, token)).json()) as { files?: DriveFile[] }
-      return body.files?.[0] ?? null
+    async getFile(token, fileId) {
+      const params = new URLSearchParams({ fields: 'id,name,modifiedTime' })
+      return (await (await get(`${API}/${encodeURIComponent(fileId)}?${params}`, token)).json()) as DriveFile
     },
     async exportCsv(token, fileId) {
       const response = await get(`${API}/${encodeURIComponent(fileId)}/export?mimeType=text%2Fcsv`, token)

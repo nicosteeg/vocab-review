@@ -11,8 +11,11 @@ describe('messages', () => {
     expect(errorMessage('drive-error', 503)).toBe('Erreur Google Drive (503).')
   })
 
-  it('explique comment exporter quand aucun export n’est trouvé', () => {
-    expect(errorMessage('no-export')).toContain('Exporter vers Google Sheets')
+  it('explique quoi choisir quand aucun fichier n’a été choisi', () => {
+    const message = errorMessage('no-file-chosen')
+    expect(message).toContain('Aucun fichier choisi')
+    expect(message).toContain('Saved translations')
+    expect(message).toContain('Exporter vers Google Sheets')
   })
 
   it('dit « Déjà à jour » quand rien n’a changé', () => {

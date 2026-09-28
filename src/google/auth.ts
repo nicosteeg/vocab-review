@@ -1,24 +1,32 @@
-export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
+/** Accès limité aux fichiers que l'utilisateur choisit dans le sélecteur Google. */
+export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
+const SPREADSHEET = 'application/vnd.google-apps.spreadsheet'
 const STATE_KEY = 'vocab-review.oauth-state'
 const PENDING_KEY = 'vocab-review.pending-sync'
 
-export type Token = { accessToken: string; expiresAt: number }
 export type AuthStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 export type RedirectOutcome =
   | { kind: 'none' }
-  | { kind: 'token'; token: Token; resumeSync: boolean }
+  | { kind: 'token'; accessToken: string; pickedFileId: string | null; resumeSync: boolean }
   | { kind: 'error'; error: 'auth-denied' | 'auth-failed' | 'state-mismatch' }
 
 type AuthRequest = { clientId: string; redirectUri: string; state: string }
 
+/**
+ * Connexion et choix du fichier en un seul passage chez Google : `trigger_onepick` affiche
+ * le sélecteur de Google après l'écran d'accord (qu'il exige à chaque fois).
+ * Pas d'`include_granted_scopes` : le jeton ne doit couvrir que les fichiers choisis.
+ */
 export function buildAuthUrl({ clientId, redirectUri, state }: AuthRequest): string {
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'token',
     scope: DRIVE_SCOPE,
-    include_granted_scopes: 'true',
     state,
+    trigger_onepick: 'true',
+    prompt: 'consent',
+    mimetypes: SPREADSHEET,
   })
   return `https://accounts.google.com/o/oauth2/v2/auth?${params}`
 }
@@ -30,8 +38,8 @@ export function beginAuth(request: AuthRequest, storage: AuthStorage): string {
   return buildAuthUrl(request)
 }
 
-/** Lit le retour de Google dans le fragment d'URL (`#access_token=…` ou `#error=…`). */
-export function consumeRedirect(hash: string, storage: AuthStorage, nowMs: number): RedirectOutcome {
+/** Lit le retour de Google dans le fragment d'URL (`#access_token=…&picked_file_ids=…` ou `#error=…`). */
+export function consumeRedirect(hash: string, storage: AuthStorage): RedirectOutcome {
   const params = new URLSearchParams(hash.replace(/^#/, ''))
   if (!params.has('access_token') && !params.has('error')) return { kind: 'none' }
 
@@ -44,15 +52,6 @@ export function consumeRedirect(hash: string, storage: AuthStorage, nowMs: numbe
   const error = params.get('error')
   if (error) return { kind: 'error', error: error === 'access_denied' ? 'auth-denied' : 'auth-failed' }
 
-  const expiresIn = Number(params.get('expires_in') ?? '3600')
-  return {
-    kind: 'token',
-    token: { accessToken: params.get('access_token') ?? '', expiresAt: nowMs + expiresIn * 1000 },
-    resumeSync,
-  }
-}
-
-/** Jeton utilisable s'il reste plus d'une minute avant son expiration. */
-export function usableToken(token: Token | null, nowMs: number): string | null {
-  return token && token.expiresAt - 60_000 > nowMs ? token.accessToken : null
+  const picked = (params.get('picked_file_ids') ?? '').split(',').filter(Boolean)
+  return { kind: 'token', accessToken: params.get('access_token') ?? '', pickedFileId: picked[0] ?? null, resumeSync }
 }

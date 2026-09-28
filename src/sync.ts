@@ -9,7 +9,7 @@ export type SyncError =
   | 'auth-denied'
   | 'auth-failed'
   | 'state-mismatch'
-  | 'no-export'
+  | 'no-file-chosen'
   | 'unrecognized-format'
   | 'drive-error'
 
@@ -20,23 +20,23 @@ export type SyncOutcome =
   | { kind: 'error'; error: SyncError; status?: number }
 
 export type SyncInput = {
-  /** Jeton utilisable, ou null s'il faut passer par Google. */
+  /** Jeton reçu au retour du sélecteur Google, ou null s'il faut y passer. */
   token: string | null
-  /** Vrai si le jeton vient d'être obtenu : un 401 ne relance alors pas une redirection. */
-  freshToken: boolean
+  /** Fichier choisi dans le sélecteur, ou null si rien n'a été choisi. */
+  fileId: string | null
   online: boolean
   snapshot: Pick<Snapshot, 'words' | 'syncMeta'>
   drive: DriveApi
   now: Date
 }
 
-/** Récupère le dernier export et calcule la fusion ; n'écrit rien. */
-export async function runSync({ token, freshToken, online, snapshot, drive, now }: SyncInput): Promise<SyncOutcome> {
+/** Lit le fichier choisi et calcule la fusion ; n'écrit rien. */
+export async function runSync({ token, fileId, online, snapshot, drive, now }: SyncInput): Promise<SyncOutcome> {
   if (!online) return { kind: 'error', error: 'offline' }
   if (!token) return { kind: 'need-auth' }
+  if (!fileId) return { kind: 'error', error: 'no-file-chosen' }
   try {
-    const file = await drive.findLatestExport(token)
-    if (!file) return { kind: 'error', error: 'no-export' }
+    const file = await drive.getFile(token, fileId)
     const last = snapshot.syncMeta
     if (last && last.fileId === file.id && last.modifiedTime === file.modifiedTime) return { kind: 'up-to-date' }
 
@@ -50,7 +50,8 @@ export async function runSync({ token, freshToken, online, snapshot, drive, now 
     }
   } catch (error) {
     if (error instanceof DriveError) {
-      if (error.status === 401) return freshToken ? { kind: 'error', error: 'auth-failed' } : { kind: 'need-auth' }
+      // Le jeton vient toujours d'être obtenu : un 401 n'est pas un simple jeton expiré
+      if (error.status === 401) return { kind: 'error', error: 'auth-failed' }
       return { kind: 'error', error: 'drive-error', status: error.status }
     }
     if (error instanceof TypeError) return { kind: 'error', error: 'offline' } // échec réseau de fetch

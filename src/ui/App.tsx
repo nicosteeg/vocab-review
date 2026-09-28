@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'preact/hooks'
-import { EXPORT_FILE_NAMES, GOOGLE_CLIENT_ID, redirectUri } from '../config'
+import { useEffect, useState } from 'preact/hooks'
+import { GOOGLE_CLIENT_ID, redirectUri } from '../config'
 import { buildQueue } from '../domain/queue'
 import { isNew } from '../domain/scheduler'
 import type { StoredCard } from '../domain/types'
-import { beginAuth, consumeRedirect, usableToken, type Token } from '../google/auth'
+import { beginAuth, consumeRedirect } from '../google/auth'
 import { createDriveApi } from '../google/drive'
 import { openStore, type Snapshot, type Store } from '../storage/db'
 import { runSync } from '../sync'
@@ -15,7 +15,10 @@ import { onBecomeVisible } from './visibility'
 
 type Screen = { name: 'home' } | { name: 'review'; queue: StoredCard[] } | { name: 'settings' }
 
-const drive = createDriveApi(EXPORT_FILE_NAMES)
+const drive = createDriveApi()
+
+/** Ce que renvoie le passage chez Google : jeton et fichier choisi dans le sélecteur. */
+type Picked = { token: string; fileId: string | null }
 
 export function App() {
   const [store, setStore] = useState<Store | null>(null)
@@ -24,7 +27,6 @@ export function App() {
   const [message, setMessage] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [persistDenied, setPersistDenied] = useState(false)
-  const token = useRef<Token | null>(null)
   // Force un nouveau rendu (et donc de nouveaux compteurs) au retour de l'arrière-plan.
   const [, setResumedAt] = useState(0)
 
@@ -47,30 +49,29 @@ export function App() {
     setSnapshot(loaded)
     navigator.storage?.persist?.().then((ok) => setPersistDenied(!ok), () => setPersistDenied(true))
 
-    const outcome = consumeRedirect(location.hash, localStorage, Date.now())
+    const outcome = consumeRedirect(location.hash, localStorage)
     if (outcome.kind === 'none') return
     history.replaceState(null, '', location.pathname + location.search)
     if (outcome.kind === 'error') setMessage(errorMessage(outcome.error))
-    if (outcome.kind === 'token') {
-      token.current = outcome.token
-      if (outcome.resumeSync) await sync(opened, loaded, true)
+    if (outcome.kind === 'token' && outcome.resumeSync) {
+      await sync(opened, loaded, { token: outcome.accessToken, fileId: outcome.pickedFileId })
     }
   }
 
-  async function sync(target: Store, current: Snapshot, freshToken: boolean) {
+  /** Sans `picked`, passe par Google (connexion + sélecteur) ; au retour, importe le fichier choisi. */
+  async function sync(target: Store, current: Snapshot, picked: Picked | null) {
     setSyncing(true)
     setMessage(null)
     try {
       const outcome = await runSync({
-        token: usableToken(token.current, Date.now()),
-        freshToken,
+        token: picked?.token ?? null,
+        fileId: picked?.fileId ?? null,
         online: navigator.onLine,
         snapshot: current,
         drive,
         now: new Date(),
       })
       if (outcome.kind === 'need-auth') {
-        token.current = null
         const request = { clientId: GOOGLE_CLIENT_ID, redirectUri: redirectUri(), state: crypto.randomUUID() }
         location.assign(beginAuth(request, localStorage))
         return
@@ -138,7 +139,7 @@ export function App() {
         setMessage(null)
         setScreen({ name: 'review', queue: buildQueue({ ...snapshot, now: new Date() }) })
       }}
-      onSync={() => void sync(store, snapshot, false)}
+      onSync={() => void sync(store, snapshot, null)}
       onSettings={() => setScreen({ name: 'settings' })}
     />
   )
