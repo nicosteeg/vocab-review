@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks'
 import { GOOGLE_CLIENT_ID, redirectUri } from '../config'
-import { buildQueue } from '../domain/queue'
+import { buildExtraNewQueue, buildFreeReviewQueue, buildQueue, type QueueInput } from '../domain/queue'
 import { isNew } from '../domain/scheduler'
 import type { StoredCard } from '../domain/types'
 import { beginAuth, consumeRedirect } from '../google/auth'
@@ -13,7 +13,7 @@ import { Review } from './Review'
 import { Settings } from './Settings'
 import { onBecomeVisible } from './visibility'
 
-type Screen = { name: 'home' } | { name: 'review'; queue: StoredCard[] } | { name: 'settings' }
+type Screen = { name: 'home' } | { name: 'review'; queue: StoredCard[]; practice: boolean } | { name: 'settings' }
 
 const drive = createDriveApi()
 
@@ -98,6 +98,7 @@ export function App() {
     return (
       <Review
         queue={screen.queue}
+        practice={screen.practice}
         words={snapshot.words}
         onSave={(card) => store.saveCard(card)}
         onExit={async () => {
@@ -126,19 +127,29 @@ export function App() {
     )
   }
 
-  const queue = buildQueue({ ...snapshot, now: new Date() })
+  const current = snapshot
+  const input = (): QueueInput => ({ ...current, now: new Date(), random: Math.random })
+  const startReview = (queue: StoredCard[], practice: boolean) => {
+    setMessage(null)
+    setScreen({ name: 'review', queue, practice })
+  }
+  const queue = buildQueue(input())
   const newCount = queue.filter((c) => isNew(c.fsrs)).length
+  const dayDone = queue.length === 0
   return (
     <Home
       dueCount={queue.length - newCount}
       newCount={newCount}
+      hasWords={snapshot.words.some((w) => w.status === 'actif')}
+      extraNewCount={dayDone && snapshot.settings.newPerDay > 0 ? buildExtraNewQueue(input()).length : 0}
+      extraNewEnabled={snapshot.settings.newPerDay > 0}
+      freeReviewCount={dayDone ? buildFreeReviewQueue(input()).length : 0}
       lastSync={snapshot.syncMeta?.syncedAt ?? null}
       syncing={syncing}
       message={message}
-      onReview={() => {
-        setMessage(null)
-        setScreen({ name: 'review', queue: buildQueue({ ...snapshot, now: new Date() }) })
-      }}
+      onReview={() => startReview(buildQueue(input()), false)}
+      onExtraNew={() => startReview(buildExtraNewQueue(input()), false)}
+      onFreeReview={() => startReview(buildFreeReviewQueue(input()), true)}
       onSync={() => void sync(store, snapshot, null)}
       onSettings={() => setScreen({ name: 'settings' })}
     />

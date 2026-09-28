@@ -7,7 +7,7 @@ const now = new Date(2026, 8, 7, 10, 0)
 const snapshot: Snapshot = {
   words: [word('reach', { fr: ['atteindre', 'parvenir à'] }), word('gone', { status: 'retiré', order: 1 })],
   cards: [card('reach', 'en-fr', { lastReview: '2026-09-01T10:00:00.000Z', due: '2026-09-04T10:00:00.000Z' }), card('reach', 'fr-en')],
-  settings: { newPerDay: 12 },
+  settings: { newPerDay: 12, directions: 'fr-en' },
   syncMeta: { fileId: 'f1', modifiedTime: '2026-09-01T09:00:00.000Z', syncedAt: '2026-09-01T10:00:00.000Z' },
 }
 const withChange = (change: (b: Record<string, unknown>) => void) => {
@@ -27,6 +27,11 @@ describe('sauvegarde', () => {
     expect(parseBackup(text).syncMeta).toBeNull()
   })
 
+  it('lit une ancienne sauvegarde sans sens de révision comme « les deux »', () => {
+    const text = withChange((b) => delete (b.settings as Record<string, unknown>).directions)
+    expect(parseBackup(text).settings).toEqual({ newPerDay: 12, directions: 'both' })
+  })
+
   it('nomme le fichier avec la date locale', () => {
     expect(backupFileName(now)).toBe('vocab-review-2026-09-07.json')
   })
@@ -40,6 +45,7 @@ describe('sauvegarde', () => {
     ['une carte sans date due', withChange((b) => delete (b.cards as { fsrs: Record<string, unknown> }[])[0].fsrs.due)],
     ['un sens de carte inconnu', withChange((b) => ((b.cards as Record<string, unknown>[])[0].direction = 'es-fr'))],
     ['des réglages absents', withChange((b) => delete b.settings)],
+    ['un sens de révision inconnu', withChange((b) => ((b.settings as Record<string, unknown>).directions = 'es-fr'))],
   ])('refuse %s', (_label, text) => {
     expect(() => parseBackup(text)).toThrow(InvalidBackupError)
   })

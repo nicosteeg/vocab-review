@@ -1,18 +1,28 @@
 type Props = {
   dueCount: number
   newCount: number
+  /** Au moins un mot actif (sinon : premier lancement ou tout est retiré). */
+  hasWords: boolean
+  /** Taille du lot « Encore N nouvelles cartes » (0 s'il n'en reste plus). */
+  extraNewCount: number
+  /** Faux si le réglage « Nouvelles cartes par jour » vaut 0. */
+  extraNewEnabled: boolean
+  freeReviewCount: number
   lastSync: string | null
   syncing: boolean
   message: string | null
   onReview: () => void
+  onExtraNew: () => void
+  onFreeReview: () => void
   onSync: () => void
   onSettings: () => void
 }
 
 const formatDate = (iso: string) => new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
+const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`
 
 export function Home(props: Props) {
-  const empty = props.dueCount + props.newCount === 0
+  const dayDone = props.hasWords && props.dueCount + props.newCount === 0
   return (
     <main class="screen home">
       <header class="topbar">
@@ -33,9 +43,31 @@ export function Home(props: Props) {
         </div>
       </section>
 
-      <button class="primary big" disabled={empty} onClick={props.onReview}>
-        {empty ? 'Rien à réviser' : 'Réviser'}
-      </button>
+      {!props.hasWords && (
+        <button class="primary big" disabled>
+          Rien à réviser
+        </button>
+      )}
+      {props.hasWords && !dayDone && (
+        <button class="primary big" onClick={props.onReview}>
+          Réviser
+        </button>
+      )}
+      {dayDone && (
+        <section class="extras">
+          <p class="done-today">Session du jour terminée ✓</p>
+          {props.extraNewEnabled && (
+            <button class="primary big" disabled={props.extraNewCount === 0} onClick={props.onExtraNew}>
+              {props.extraNewCount === 0
+                ? 'Plus de nouvelles cartes'
+                : `Encore ${plural(props.extraNewCount, 'nouvelle carte', 'nouvelles cartes')}`}
+            </button>
+          )}
+          <button class="secondary" disabled={props.freeReviewCount === 0} onClick={props.onFreeReview}>
+            Révision libre
+          </button>
+        </section>
+      )}
 
       {props.message && (
         <p class="message" role="status">

@@ -69,7 +69,8 @@ export async function openStore(name = 'vocab-review'): Promise<Store> {
       return {
         words,
         cards,
-        settings: (settings as Settings | undefined) ?? DEFAULT_SETTINGS,
+        // Des réglages enregistrés par une version précédente peuvent manquer de champs récents
+        settings: { ...DEFAULT_SETTINGS, ...(settings as Partial<Settings> | undefined) },
         syncMeta: (syncMeta as SyncMeta | undefined) ?? null,
       }
     },

@@ -1,3 +1,4 @@
+import { DIRECTIONS, type Directions } from '../domain/types'
 import type { Snapshot } from './db'
 
 export type Backup = Snapshot & { app: 'vocab-review'; version: 1; exportedAt: string }
@@ -62,11 +63,14 @@ export function parseBackup(text: string): Snapshot {
   if (!Array.isArray(data.words) || !data.words.every(isWord)) throw new InvalidBackupError('mots illisibles')
   if (!Array.isArray(data.cards) || !data.cards.every(isCard)) throw new InvalidBackupError('cartes illisibles')
   if (!isObject(data.settings) || !isNumber(data.settings.newPerDay)) throw new InvalidBackupError('réglages illisibles')
+  // Absent des sauvegardes faites avant l'arrivée du réglage : les deux sens
+  const directions = data.settings.directions ?? 'both'
+  if (!DIRECTIONS.includes(directions as Directions)) throw new InvalidBackupError('sens de révision inconnu')
   if (data.syncMeta !== null && !isSyncMeta(data.syncMeta)) throw new InvalidBackupError('infos de synchro illisibles')
   return {
     words: data.words as Snapshot['words'],
     cards: data.cards as Snapshot['cards'],
-    settings: { newPerDay: data.settings.newPerDay },
+    settings: { newPerDay: data.settings.newPerDay, directions: directions as Directions },
     syncMeta: data.syncMeta as Snapshot['syncMeta'],
   }
 }

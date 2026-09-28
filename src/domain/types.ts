@@ -33,8 +33,12 @@ export type StoredCard = {
   introducedAt?: string
 }
 
-export type Settings = { newPerDay: number }
-export const DEFAULT_SETTINGS: Settings = { newPerDay: 10 }
+/** Sens révisés : les deux, ou un seul. */
+export type Directions = 'both' | CardDirection
+export const DIRECTIONS: readonly Directions[] = ['both', 'en-fr', 'fr-en']
+
+export type Settings = { newPerDay: number; directions: Directions }
+export const DEFAULT_SETTINGS: Settings = { newPerDay: 10, directions: 'both' }
 
 export type SyncMeta = { fileId: string; modifiedTime: string; syncedAt: string }
 

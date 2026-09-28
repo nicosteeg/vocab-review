@@ -4,13 +4,15 @@ import type { Grade, StoredCard, Word } from '../domain/types'
 
 type Props = {
   queue: StoredCard[]
+  /** Révision libre : les réponses ne changent pas la planification. */
+  practice: boolean
   words: Word[]
   onSave: (card: StoredCard) => Promise<void>
   onExit: () => void
 }
 
-export function Review({ queue, words, onSave, onExit }: Props) {
-  const [state, setState] = useState(() => startSession(queue))
+export function Review({ queue, practice, words, onSave, onExit }: Props) {
+  const [state, setState] = useState(() => startSession(queue, { practice }))
   const [flipped, setFlipped] = useState(false)
   const byKey = useMemo(() => new Map(words.map((w) => [w.key, w])), [words])
 
@@ -25,7 +27,7 @@ export function Review({ queue, words, onSave, onExit }: Props) {
     const { total, percent } = summary(state)
     return (
       <main class="screen done">
-        <h2>Terminé</h2>
+        <h2>{practice ? 'Révision libre terminée' : 'Terminé'}</h2>
         <p>
           {total} {total > 1 ? 'cartes' : 'carte'} · {percent} % sues
         </p>
@@ -56,6 +58,7 @@ export function Review({ queue, words, onSave, onExit }: Props) {
           Fermer
         </button>
         <span class="progress">
+          {practice && 'Révision libre · '}
           {done} / {total}
         </span>
         <button class="ghost" disabled={!canUndo(state)} onClick={() => void apply(undo(state))}>

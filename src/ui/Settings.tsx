@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks'
-import type { Settings as SettingsValue } from '../domain/types'
+import { DIRECTIONS, type Directions, type Settings as SettingsValue } from '../domain/types'
 import { backupFileName, makeBackup, parseBackup } from '../storage/backup'
 import type { Snapshot } from '../storage/db'
 import { EXPORT_HELP } from './messages'
@@ -11,6 +11,12 @@ type Props = {
   onSaveSettings: (settings: SettingsValue) => Promise<void>
   onRestore: (snapshot: Snapshot) => Promise<void>
   onBack: () => void
+}
+
+const DIRECTION_LABELS: Record<Directions, string> = {
+  both: 'Les deux sens',
+  'en-fr': 'Anglais → Français',
+  'fr-en': 'Français → Anglais',
 }
 
 export function Settings({ snapshot, persistDenied, onSaveSettings, onRestore, onBack }: Props) {
@@ -43,7 +49,12 @@ export function Settings({ snapshot, persistDenied, onSaveSettings, onRestore, o
 
   function changeNewPerDay(event: Event) {
     const value = Math.round(Number((event.currentTarget as HTMLInputElement).value))
-    if (Number.isFinite(value) && value >= 0 && value <= 100) void onSaveSettings({ newPerDay: value })
+    if (Number.isFinite(value) && value >= 0 && value <= 100) void onSaveSettings({ ...snapshot.settings, newPerDay: value })
+  }
+
+  function changeDirections(event: Event) {
+    const value = (event.currentTarget as HTMLSelectElement).value as Directions
+    if (DIRECTIONS.includes(value)) void onSaveSettings({ ...snapshot.settings, directions: value })
   }
 
   return (
@@ -60,6 +71,16 @@ export function Settings({ snapshot, persistDenied, onSaveSettings, onRestore, o
         <label class="row">
           Nouvelles cartes par jour
           <input type="number" inputMode="numeric" min={0} max={100} value={snapshot.settings.newPerDay} onChange={changeNewPerDay} />
+        </label>
+        <label class="row">
+          Sens de révision
+          <select value={snapshot.settings.directions} onChange={changeDirections}>
+            {DIRECTIONS.map((d) => (
+              <option key={d} value={d}>
+                {DIRECTION_LABELS[d]}
+              </option>
+            ))}
+          </select>
         </label>
         <p class="note">{active} mots actifs.</p>
       </section>

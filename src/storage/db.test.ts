@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { describe, expect, it } from 'vitest'
 import { card, word } from '../test/builders'
-import { DEFAULT_SETTINGS, type StoredCard } from '../domain/types'
+import { DEFAULT_SETTINGS, type Settings, type StoredCard } from '../domain/types'
 import { openStore } from './db'
 
 let counter = 0
@@ -46,16 +46,22 @@ describe('openStore', () => {
     await store.applySync([word('a')], [card('a', 'en-fr')], meta)
     const reviewed = card('a', 'en-fr', { lastReview: '2026-09-27T10:00:00.000Z', due: '2026-09-30T10:00:00.000Z' })
     await store.saveCard(reviewed)
-    await store.saveSettings({ newPerDay: 5 })
+    await store.saveSettings({ newPerDay: 5, directions: 'fr-en' })
     const snap = await store.load()
     expect(snap.cards).toEqual([reviewed])
-    expect(snap.settings).toEqual({ newPerDay: 5 })
+    expect(snap.settings).toEqual({ newPerDay: 5, directions: 'fr-en' })
+  })
+
+  it('complète des réglages enregistrés par une version précédente (sans sens de révision)', async () => {
+    const store = await freshStore()
+    await store.saveSettings({ newPerDay: 5 } as Settings)
+    expect((await store.load()).settings).toEqual({ newPerDay: 5, directions: 'both' })
   })
 
   it('remplace toutes les données lors d’une restauration', async () => {
     const store = await freshStore()
     await store.applySync([word('old')], [card('old', 'en-fr')], meta)
-    const restored = { words: [word('new')], cards: [card('new', 'fr-en')], settings: { newPerDay: 3 }, syncMeta: null }
+    const restored = { words: [word('new')], cards: [card('new', 'fr-en')], settings: { newPerDay: 3, directions: 'en-fr' as const }, syncMeta: null }
     await store.replaceAll(restored)
     expect(await store.load()).toEqual(restored)
   })

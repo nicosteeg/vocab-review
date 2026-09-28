@@ -83,6 +83,35 @@ describe('session', () => {
     expect(undone.save).toEqual(a)
   })
 
+  it('en révision libre, une réponse ne replanifie ni n’enregistre la carte', () => {
+    const { state, save } = answer(startSession([a, b], { practice: true }), 'su', now)
+    expect(save).toBeUndefined()
+    expect(state.queue).toEqual([b])
+    expect(state.practice).toBe(true)
+  })
+
+  it('en révision libre, « Pas su » renvoie quand même la carte en fin de file, sans l’enregistrer', () => {
+    const { state, save } = answer(startSession([a, b], { practice: true }), 'pas-su', now)
+    expect(save).toBeUndefined()
+    expect(state.queue).toEqual([b, a])
+  })
+
+  it('en révision libre, « Annuler » ne réécrit rien en base', () => {
+    const answered = answer(startSession([a], { practice: true }), 'su', now).state
+    const undone = undo(answered)
+    expect(undone.save).toBeUndefined()
+    expect(undone.state.queue).toEqual([a])
+    expect(undone.state.practice).toBe(true)
+  })
+
+  it('en révision libre, calcule quand même le bilan', () => {
+    let state = startSession([a, b], { practice: true })
+    state = answer(state, 'su', now).state
+    state = answer(state, 'pas-su', now).state
+    state = answer(state, 'su', now).state
+    expect(summary(state)).toEqual({ total: 2, percent: 50 })
+  })
+
   it('ne fait rien quand la file est vide', () => {
     const empty = startSession([])
     expect(answer(empty, 'su', now)).toEqual({ state: empty })
